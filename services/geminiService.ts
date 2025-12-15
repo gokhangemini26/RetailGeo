@@ -11,11 +11,11 @@ const getClient = () => {
 };
 
 // 1. GATHER DATA: Robust Fallback Strategy
-export const gatherLocationData = async (address: string): Promise<{ text: string; chunks: any[] }> => {
+export const gatherLocationData = async (address: string, customCriteria?: string): Promise<{ text: string; chunks: any[] }> => {
   const ai = getClient();
   
-  const basePrompt = `
-    Şu konumu analiz et: "${address}".
+  // Default criteria if not provided
+  const criteriaText = customCriteria || `
     1km yarıçapındaki ticari ve sosyal çevrenin detaylı bir envanterini çıkar.
     
     ÖZELLİKLE ŞU "İŞARETÇİ" (PROXY) KATEGORİLERİ ARA:
@@ -27,6 +27,11 @@ export const gatherLocationData = async (address: string): Promise<{ text: strin
     5. Yaşam & Trafik: Özel Okullar / Kolejler, Metro İstasyonları, Spor Salonları (MacFit vb.), Üniversite Kampüsleri.
 
     Bu markaların veya KATEGORİLERİN varlığına dayalı olarak bölgenin ticari dokusunu özetle.
+  `;
+
+  const basePrompt = `
+    Şu konumu analiz et: "${address}".
+    ${criteriaText}
   `;
 
   // STRATEGY 1: TRY GOOGLE MAPS GROUNDING
@@ -92,17 +97,10 @@ export const gatherLocationData = async (address: string): Promise<{ text: strin
 };
 
 // 2. ANALYZE & THINK: Fallback Strategy for Pro Model
-export const analyzeStrategicFit = async (locationData: string): Promise<AnalysisResult['metrics'] & { productStrategy: string }> => {
+export const analyzeStrategicFit = async (locationData: string, customScoring?: string): Promise<AnalysisResult['metrics'] & { productStrategy: string }> => {
   const ai = getClient();
 
-  const prompt = `
-    Sen "RetailGeo Hibrit Ölçüm Metodu"nu kullanan Kıdemli bir Stratejistisin.
-    
-    Aşağıdaki konum verilerini (Google Maps çıktısı) analiz et:
-    ---
-    ${locationData}
-    ---
-
+  const scoringLogic = customScoring || `
     GÖREV: Aşağıdaki "Puanlama Tablosunu" kullanarak bölgenin skorlarını hesapla.
     Başlangıç Puanı her kategori için 50'dir (Nötr). Bulduğun her işaretçi için puan ekle veya çıkar.
     Skorlar 0'ın altına düşemez, 100'ü geçemez.
@@ -130,6 +128,17 @@ export const analyzeStrategicFit = async (locationData: string): Promise<Analysi
     1. "Şehirli Profesyonel": Eğer (Refah > 60) VE (Trend > 55). (Plaza, Lüks, Cadde).
     2. "Genç & Trend": Eğer (Trend > Refah) VE (Trend > Aile). (Öğrenci, Kafe, Eğlence).
     3. "Aile & Konut": Eğer (Aile > 60) VE (Aile > Trend). (Okul, Market, Park, Site).
+  `;
+
+  const prompt = `
+    Sen "RetailGeo Hibrit Ölçüm Metodu"nu kullanan Kıdemli bir Stratejistisin.
+    
+    Aşağıdaki konum verilerini (Google Maps çıktısı) analiz et:
+    ---
+    ${locationData}
+    ---
+
+    ${scoringLogic}
     
     *Eğer puanlar birbirine çok yakınsa, metin içerisindeki "atmosfere" göre inisiyatif al ve birini seç.*
 

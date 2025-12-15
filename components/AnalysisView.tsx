@@ -7,12 +7,62 @@ import { GroundingSources } from './GroundingSources';
 import { Button } from './Button';
 import ReactMarkdown from 'react-markdown';
 
+const DEFAULT_SEARCH_CRITERIA = `1km yarıçapındaki ticari ve sosyal çevrenin detaylı bir envanterini çıkar.
+    
+ÖZELLİKLE ŞU "İŞARETÇİ" (PROXY) KATEGORİLERİ ARA:
+
+1. Lüks ve Premium Tüketim: Macro Center, Vakko, Beymen, Godiva gibi markalar VEYA "Gurme Market", "Lüks Giyim", "Fine Dining" kategorileri.
+2. Orta-Üst & Trend Tüketim: Starbucks, Migros (M/MM), Mavi, Kahve Dünyası, Bağımsız (Artisan) Kahveciler, Suşiciler, Kokteyl Barlar.
+3. Standart & Aile Tüketimi: LC Waikiki, DeFacto, Şok, A101, Ziraat Bankası, Devlet Okulları, Parklar, Konut Siteleri.
+4. Uygun Fiyatlı Tüketim: BİM, Spotçular, Ucuzluk Pazarları, Outletler.
+5. Yaşam & Trafik: Özel Okullar / Kolejler, Metro İstasyonları, Spor Salonları (MacFit vb.), Üniversite Kampüsleri.
+
+Bu markaların veya KATEGORİLERİN varlığına dayalı olarak bölgenin ticari dokusunu özetle.`;
+
+const DEFAULT_SCORING_LOGIC = `GÖREV: Aşağıdaki "Puanlama Tablosunu" kullanarak bölgenin skorlarını hesapla.
+Başlangıç Puanı her kategori için 50'dir (Nötr). Bulduğun her işaretçi için puan ekle veya çıkar.
+Skorlar 0'ın altına düşemez, 100'ü geçemez.
+
+PUANLAMA TABLOSU (PROXY INDICATORS):
+---------------------------------------------------------
+| İşaretçi (Varlık veya Kategori) | Etki | Hedef Kitle |
+| :--- | :--- | :--- |
+| **Lüks Markalar / Plaza / Rezidans** | **+10 Puan** | Refah (Affluence) |
+| **Starbucks / 3. Nesil Kahve / Sanat** | **+8 Puan** | Trend (Gençlik/Modern) |
+| **Özel Okul / Kolej / Site Yaşamı** | **+7 Puan** | Aile (Family) |
+| **Metro / AVM / İşlek Cadde** | **+5 Puan** | Genel Trafik (Hepsine +2) |
+| **Marketler (Migros, Carrefour)** | **+3 Puan** | Aile & Refah |
+| **İndirim Marketleri (BİM/A101)** | **-4 Puan** | Refah Skoru Düşer |
+---------------------------------------------------------
+
+HESAPLAMA MANTIĞI:
+1. Refah Puanı (Affluence Score): 50 + (Lüks Göstergeler) - (Ucuzluk Göstergeleri).
+2. Trend Puanı (Trend Score): 50 + (Kahveciler) + (Gece Hayatı/Sanat) + (Üniversite).
+3. Aile Puanı (Family Score): 50 + (Okullar) + (Parklar) + (Konut/Marketler).
+
+BASKIN SEGMENT SEÇİMİ (ZORUNLU):
+Aşağıdaki kurallara göre EN UYGUN segmenti seçmek ZORUNDASIN. "Bilinmiyor" seçeneğini kullanma.
+
+1. "Şehirli Profesyonel": Eğer (Refah > 60) VE (Trend > 55). (Plaza, Lüks, Cadde).
+2. "Genç & Trend": Eğer (Trend > Refah) VE (Trend > Aile). (Öğrenci, Kafe, Eğlence).
+3. "Aile & Konut": Eğer (Aile > 60) VE (Aile > Trend). (Okul, Market, Park, Site).`;
+
 export const AnalysisView: React.FC = () => {
   const [address, setAddress] = useState('');
   const [step, setStep] = useState<'idle' | 'gathering' | 'analyzing' | 'complete'>('idle');
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [dbStatus, setDbStatus] = useState<string>('');
   
+  // Settings State
+  const [showSettings, setShowSettings] = useState(false);
+  const [searchCriteria, setSearchCriteria] = useState(DEFAULT_SEARCH_CRITERIA);
+  const [scoringLogic, setScoringLogic] = useState(DEFAULT_SCORING_LOGIC);
+
+  // Admin Auth State
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
+  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
+  const [adminPasswordInput, setAdminPasswordInput] = useState('');
+
   // Product Recommendation State
   const [brandUrl, setBrandUrl] = useState('');
   const [recommendations, setRecommendations] = useState<RecommendedProduct[]>([]);
@@ -27,12 +77,12 @@ export const AnalysisView: React.FC = () => {
     setDbStatus('');
 
     try {
-      // Step 1: Grounding with Maps
-      const locationData = await gatherLocationData(address);
+      // Step 1: Grounding with Maps (Passing custom criteria)
+      const locationData = await gatherLocationData(address, searchCriteria);
       
       setStep('analyzing');
-      // Step 2: Thinking with Pro Model
-      const metrics = await analyzeStrategicFit(locationData.text);
+      // Step 2: Thinking with Pro Model (Passing custom scoring logic)
+      const metrics = await analyzeStrategicFit(locationData.text, scoringLogic);
 
       const finalResult: AnalysisResult = {
         locationName: address,
@@ -76,6 +126,28 @@ export const AnalysisView: React.FC = () => {
       }
   }
 
+  const handleSettingsClick = () => {
+    if (isAdminUnlocked) {
+      setShowSettings(!showSettings);
+    } else {
+      setShowPasswordPrompt(!showPasswordPrompt);
+    }
+  };
+
+  const handleAdminLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Simple hardcoded password for demonstration
+    if (adminPasswordInput === 'admin123321admin') {
+      setIsAdminUnlocked(true);
+      setShowPasswordPrompt(false);
+      setShowSettings(true);
+      setAdminPasswordInput('');
+    } else {
+      alert("Hatalı şifre!");
+      setAdminPasswordInput('');
+    }
+  };
+
   const getSegmentColor = (seg: SegmentType) => {
     switch (seg) {
         case SegmentType.URBAN_PROFESSIONAL: return "text-emerald-400";
@@ -97,28 +169,110 @@ export const AnalysisView: React.FC = () => {
       {/* Input Section */}
       <div className="bg-slate-800/50 p-8 rounded-2xl border border-slate-700 shadow-xl">
         <h2 className="text-2xl font-bold text-white mb-6">Konum Analizi</h2>
-        <div className="flex flex-col sm:flex-row gap-4">
-            <input
-                type="text"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="Mağaza adresini girin (örn: Bağdat Caddesi, İstanbul)"
-                className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-5 py-3 text-white focus:ring-2 focus:ring-brand-500 focus:outline-none placeholder-slate-500"
-                onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
-            />
-            <Button 
-                onClick={handleAnalyze} 
-                isLoading={step === 'gathering' || step === 'analyzing'}
-                className="py-3 px-8 text-lg"
-            >
-                {step === 'gathering' 
-                  ? 'Haritalar Taranıyor...' 
-                  : step === 'analyzing' 
-                    ? 'Puanlar Hesaplanıyor...' 
-                    : step === 'complete' 
-                      ? 'Yeniden Analiz Et' 
-                      : 'Konumu Analiz Et'}
-            </Button>
+        <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row gap-4">
+                <input
+                    type="text"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="Mağaza adresini girin (örn: Bağdat Caddesi, İstanbul)"
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-5 py-3 text-white focus:ring-2 focus:ring-brand-500 focus:outline-none placeholder-slate-500"
+                    onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
+                />
+                <Button 
+                    onClick={handleAnalyze} 
+                    isLoading={step === 'gathering' || step === 'analyzing'}
+                    className="py-3 px-8 text-lg"
+                >
+                    {step === 'gathering' 
+                    ? 'Haritalar Taranıyor...' 
+                    : step === 'analyzing' 
+                        ? 'Puanlar Hesaplanıyor...' 
+                        : step === 'complete' 
+                        ? 'Yeniden Analiz Et' 
+                        : 'Konumu Analiz Et'}
+                </Button>
+            </div>
+            
+            {/* Advanced Settings Toggle & Auth */}
+            <div>
+                <button 
+                    onClick={handleSettingsClick}
+                    className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition-colors select-none"
+                >
+                    {isAdminUnlocked ? (
+                       <svg className={`w-4 h-4 text-green-400 transition-transform ${showSettings ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                       </svg>
+                    ) : (
+                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                       </svg>
+                    )}
+                    {isAdminUnlocked ? "Analiz Kriterlerini Düzenle (Admin)" : "Analiz Kriterlerini Düzenle (Kilitli)"}
+                </button>
+
+                {/* Password Prompt */}
+                {showPasswordPrompt && !isAdminUnlocked && (
+                    <div className="mt-3 p-4 bg-slate-900/80 rounded-lg border border-slate-700 max-w-sm animate-fade-in">
+                        <form onSubmit={handleAdminLogin} className="flex flex-col gap-2">
+                            <label className="text-xs text-slate-400">Admin Şifresi Gerekiyor</label>
+                            <div className="flex gap-2">
+                                <input 
+                                    type="password"
+                                    value={adminPasswordInput}
+                                    onChange={(e) => setAdminPasswordInput(e.target.value)}
+                                    placeholder="Şifre"
+                                    className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-xs text-white focus:ring-1 focus:ring-brand-500"
+                                    autoFocus
+                                />
+                                <button 
+                                    type="submit"
+                                    className="bg-brand-600 hover:bg-brand-500 text-white text-xs px-3 py-1.5 rounded transition-colors"
+                                >
+                                    Giriş
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                )}
+
+                {/* Settings Panel */}
+                {showSettings && isAdminUnlocked && (
+                    <div className="mt-4 p-4 bg-slate-900 rounded-xl border border-slate-700 grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
+                        <div className="col-span-full flex items-center gap-2 mb-2 pb-2 border-b border-slate-800">
+                             <span className="bg-green-500/10 text-green-400 text-xs px-2 py-0.5 rounded border border-green-500/20 font-mono">ADMIN MODE</span>
+                             <span className="text-slate-500 text-xs">Ayarlar aktif</span>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-brand-400 mb-2 uppercase">1. Harita Arama Kriterleri</label>
+                            <p className="text-xs text-slate-500 mb-2">AI haritada neleri aramalı? (Marka isimleri, kategoriler)</p>
+                            <textarea 
+                                value={searchCriteria}
+                                onChange={(e) => setSearchCriteria(e.target.value)}
+                                className="w-full h-64 bg-slate-800 border border-slate-700 rounded-lg p-3 text-xs text-slate-300 font-mono focus:ring-1 focus:ring-brand-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-brand-400 mb-2 uppercase">2. Puanlama & Segment Mantığı</label>
+                            <p className="text-xs text-slate-500 mb-2">Puanlar nasıl hesaplanmalı ve segment nasıl seçilmeli?</p>
+                            <textarea 
+                                value={scoringLogic}
+                                onChange={(e) => setScoringLogic(e.target.value)}
+                                className="w-full h-64 bg-slate-800 border border-slate-700 rounded-lg p-3 text-xs text-slate-300 font-mono focus:ring-1 focus:ring-brand-500"
+                            />
+                        </div>
+                        <div className="col-span-full flex justify-end">
+                            <button 
+                                onClick={() => { setSearchCriteria(DEFAULT_SEARCH_CRITERIA); setScoringLogic(DEFAULT_SCORING_LOGIC); }}
+                                className="text-xs text-red-400 hover:text-red-300 underline"
+                            >
+                                Varsayılanlara Sıfırla
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
       </div>
 
