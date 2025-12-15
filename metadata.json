@@ -1,0 +1,5 @@
+{
+  "name": "RetailGeo Intelligence",
+  "description": "Gemini ve Google Haritalar'ı kullanarak mağaza konumlarını analiz eden, sosyo-ekonomik personaları belirleyen ve görsel mağazacılık stratejileri oluşturan bir konum zekası platformu.",
+  "requestFramePermissions": []
+}
