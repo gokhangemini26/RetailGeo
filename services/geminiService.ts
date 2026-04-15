@@ -1,377 +1,68 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { AnalysisResult, SegmentType, RecommendedProduct, ProductDNA, AspectRatio } from "../types";
+/**
+ * geminiService.ts
+ *
+ * Client-side service. All Gemini API calls are proxied through /api/gemini
+ * so the API key is NEVER exposed in the browser bundle.
+ */
+import { AnalysisResult, SegmentType, RecommendedProduct, ProductDNA, AspectRatio } from '../types';
 
-// Helper to ensure API key exists
-const getClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("API Anahtarı bulunamadı. Lütfen hosting panelinizde (Vercel/Netlify/vb.) 'API_KEY' adında bir Environment Variable tanımladığınızdan emin olun.");
+const API_ENDPOINT = '/api/gemini';
+
+// Generic helper: POST to serverless function
+const callApi = async (action: string, params: object): Promise<any> => {
+  const response = await fetch(API_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...params }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || `Server error: ${response.status}`);
   }
-  return new GoogleGenAI({ apiKey });
+
+  return data.result;
 };
 
-// 1. GATHER DATA: Robust Fallback Strategy
-export const gatherLocationData = async (address: string, customCriteria?: string): Promise<{ text: string; chunks: any[] }> => {
-  const ai = getClient();
-  
-  // Default criteria if not provided
-  const criteriaText = customCriteria || `
-    1km yarıçapındaki ticari ve sosyal çevrenin detaylı bir envanterini çıkar.
-    
-    ÖZELLİKLE ŞU "İŞARETÇİ" (PROXY) KATEGORİLERİ ARA:
-    
-    1. Lüks ve Premium Tüketim: Macro Center, Vakko, Beymen, Godiva gibi markalar VEYA "Gurme Market", "Lüks Giyim", "Fine Dining" kategorileri.
-    2. Orta-Üst & Trend Tüketim: Starbucks, Migros (M/MM), Mavi, Kahve Dünyası, Bağımsız (Artisan) Kahveciler, Suşiciler, Kokteyl Barlar.
-    3. Standart & Aile Tüketimi: LC Waikiki, DeFacto, Şok, A101, Ziraat Bankası, Devlet Okulları, Parklar, Konut Siteleri.
-    4. Uygun Fiyatlı Tüketim: BİM, Spotçular, Ucuzluk Pazarları, Outletler.
-    5. Yaşam & Trafik: Özel Okullar / Kolejler, Metro İstasyonları, Spor Salonları (MacFit vb.), Üniversite Kampüsleri.
-
-    Bu markaların veya KATEGORİLERİN varlığına dayalı olarak bölgenin ticari dokusunu özetle.
-  `;
-
-  const basePrompt = `
-    Şu konumu analiz et: "${address}".
-    ${criteriaText}
-  `;
-
-  // STRATEGY 1: TRY GOOGLE SEARCH GROUNDING (AI Studio compatible)
-  try {
-    console.log("Attempting Strategy 1: Google Search Grounding...");
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: basePrompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-      },
-    });
-    return {
-      text: response.text || "Veri bulunamadı.",
-      chunks: response.candidates?.[0]?.groundingMetadata?.groundingChunks || [],
-    };
-  } catch (searchError: any) {
-    console.warn("Strategy 1 (Search) failed, falling back to internal knowledge:", searchError);
-
-    // STRATEGY 2: FALLBACK TO INTERNAL KNOWLEDGE (NO TOOLS)
-    try {
-      console.log("Attempting Strategy 2: Internal Knowledge (No Tools)...");
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: basePrompt + "\n\n(Not: Arama araçlarına erişilemedi. Kendi genel coğrafi ve demografik bilginle bu bölgeyi, semti ve atmosferini analiz et.)",
-      });
-      return {
-        text: response.text || "Veri bulunamadı.",
-        chunks: [],
-      };
-    } catch (finalError: any) {
-      console.error("All strategies failed:", finalError);
-      const msg = finalError.message || finalError.toString();
-
-      let friendlyMsg = msg;
-      if (msg.includes("403")) friendlyMsg = "API Anahtarı yetkisi reddedildi (403). Vercel'de GEMINI_API_KEY değişkenini kontrol edin.";
-      if (msg.includes("Failed to fetch") || msg.includes("CORS")) friendlyMsg = "İnternet bağlantısı veya CORS hatası.";
-
-      throw new Error(`Konum verileri toplanamadı. ${friendlyMsg}`);
-    }
-  }
+// 1. GATHER DATA
+export const gatherLocationData = async (
+  address: string,
+  customCriteria?: string
+): Promise<{ text: string; chunks: any[] }> => {
+  return callApi('gatherLocation', { address, customCriteria });
 };
 
-// 2. ANALYZE & THINK: Fallback Strategy for Pro Model
-export const analyzeStrategicFit = async (locationData: string, customScoring?: string): Promise<AnalysisResult['metrics'] & { productStrategy: string }> => {
-  const ai = getClient();
-
-  const scoringLogic = customScoring || `
-    GÖREV: Aşağıdaki "Puanlama Tablosunu" kullanarak bölgenin skorlarını hesapla.
-    Başlangıç Puanı her kategori için 50'dir (Nötr). Bulduğun her işaretçi için puan ekle veya çıkar.
-    Skorlar 0'ın altına düşemez, 100'ü geçemez.
-
-    PUANLAMA TABLOSU (PROXY INDICATORS):
-    ---------------------------------------------------------
-    | İşaretçi (Varlık veya Kategori) | Etki | Hedef Kitle |
-    | :--- | :--- | :--- |
-    | **Lüks Markalar / Plaza / Rezidans** | **+10 Puan** | Refah (Affluence) |
-    | **Starbucks / 3. Nesil Kahve / Sanat** | **+8 Puan** | Trend (Gençlik/Modern) |
-    | **Özel Okul / Kolej / Site Yaşamı** | **+7 Puan** | Aile (Family) |
-    | **Metro / AVM / İşlek Cadde** | **+5 Puan** | Genel Trafik (Hepsine +2) |
-    | **Marketler (Migros, Carrefour)** | **+3 Puan** | Aile & Refah |
-    | **İndirim Marketleri (BİM/A101)** | **-4 Puan** | Refah Skoru Düşer |
-    ---------------------------------------------------------
-
-    HESAPLAMA MANTIĞI:
-    1. Refah Puanı (Affluence Score): 50 + (Lüks Göstergeler) - (Ucuzluk Göstergeleri).
-    2. Trend Puanı (Trend Score): 50 + (Kahveciler) + (Gece Hayatı/Sanat) + (Üniversite).
-    3. Aile Puanı (Family Score): 50 + (Okullar) + (Parklar) + (Konut/Marketler).
-
-    BASKIN SEGMENT SEÇİMİ (ZORUNLU):
-    Aşağıdaki kurallara göre EN UYGUN segmenti seçmek ZORUNDASIN. "Bilinmiyor" seçeneğini kullanma.
-    
-    1. "Şehirli Profesyonel": Eğer (Refah > 60) VE (Trend > 55). (Plaza, Lüks, Cadde).
-    2. "Genç & Trend": Eğer (Trend > Refah) VE (Trend > Aile). (Öğrenci, Kafe, Eğlence).
-    3. "Aile & Konut": Eğer (Aile > 60) VE (Aile > Trend). (Okul, Market, Park, Site).
-  `;
-
-  const prompt = `
-    Sen "RetailGeo Hibrit Ölçüm Metodu"nu kullanan Kıdemli bir Stratejistisin.
-    
-    Aşağıdaki konum verilerini (Google Maps çıktısı) analiz et:
-    ---
-    ${locationData}
-    ---
-
-    ${scoringLogic}
-    
-    *Eğer puanlar birbirine çok yakınsa, metin içerisindeki "atmosfere" göre inisiyatif al ve birini seç.*
-
-    ÇIKTI:
-    JSON formatında yanıtla.
-    dominantSegment alanı SADECE şunlardan biri olmalıdır: "Şehirli Profesyonel", "Genç & Trend", "Aile & Konut".
-    
-    Ürün Stratejisi (productStrategy):
-    Belirlenen segmente göre Markdown formatında detaylı bir öneri yaz.
-  `;
-
-  const commonConfig = {
-    responseMimeType: "application/json",
-    responseSchema: {
-      type: Type.OBJECT,
-      properties: {
-        affluenceScore: { type: Type.NUMBER },
-        trendScore: { type: Type.NUMBER },
-        familyScore: { type: Type.NUMBER },
-        dominantSegment: { type: Type.STRING, enum: ["Şehirli Profesyonel", "Genç & Trend", "Aile & Konut"] },
-        reasoning: { type: Type.STRING },
-        productStrategy: { type: Type.STRING }
-      },
-      required: ["affluenceScore", "trendScore", "familyScore", "dominantSegment", "reasoning", "productStrategy"]
-    }
-  };
-
-  // Helper to parse and validate result
-  const parseResult = (text: string) => {
-    try {
-        const result = JSON.parse(text || "{}");
-        let segment = SegmentType.UNKNOWN;
-        const segments = Object.values(SegmentType);
-        const normalizedResultSegment = result.dominantSegment?.trim();
-
-        if (segments.includes(normalizedResultSegment as SegmentType)) {
-          segment = normalizedResultSegment as SegmentType;
-        } else {
-            // Fallback logic if AI still sends something weird
-            if (result.affluenceScore >= result.trendScore && result.affluenceScore >= result.familyScore) {
-                segment = SegmentType.URBAN_PROFESSIONAL;
-            } else if (result.trendScore >= result.familyScore) {
-                segment = SegmentType.YOUNG_TRENDY;
-            } else {
-                segment = SegmentType.FAMILY_RESIDENTIAL;
-            }
-        }
-        return {
-          affluenceScore: result.affluenceScore,
-          trendScore: result.trendScore,
-          familyScore: result.familyScore,
-          dominantSegment: segment,
-          reasoning: result.reasoning,
-          productStrategy: result.productStrategy
-        };
-    } catch (e) {
-        throw new Error("JSON Parse Error");
-    }
-  };
-
-  // PLAN A: Try Gemini 2.5 Pro (standard, no thinking - AI Studio compatible)
-  try {
-    console.log("Attempting Analysis with Gemini 2.5 Pro...");
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-pro",
-      contents: prompt,
-      config: commonConfig,
-    });
-    return parseResult(response.text || "{}");
-  } catch (proError: any) {
-    console.warn("Gemini 2.5 Pro failed, falling back to Flash:", proError);
-    
-    // PLAN B: Fallback to Gemini 2.5 Flash
-    try {
-        console.log("Attempting Analysis with Gemini 2.5 Flash...");
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: commonConfig
-        });
-        return parseResult(response.text || "{}");
-    } catch (flashError: any) {
-        console.error("All analysis models failed:", flashError);
-        throw new Error("Analiz modelleri yanıt vermedi. Lütfen daha sonra tekrar deneyin.");
-    }
-  }
+// 2. ANALYZE & THINK
+export const analyzeStrategicFit = async (
+  locationData: string,
+  customScoring?: string
+): Promise<AnalysisResult['metrics'] & { productStrategy: string }> => {
+  return callApi('analyzeFit', { locationData, customScoring });
 };
 
 // 3. STORE-PRODUCT OPTIMIZATION
-export const generateProductRecommendations = async (persona: SegmentType, brandUrl: string): Promise<RecommendedProduct[]> => {
-    const ai = getClient();
-
-    const prompt = `
-      Sen Dijital Merchandising uzmanısın.
-      Hedef Mağaza Personası: "${persona}"
-      Marka Web Sitesi/Koleksiyon Kaynağı: "${brandUrl}"
-  
-      Görevin:
-      Bu web sitesindeki (veya markanın genel bilinirliğindeki) ürün koleksiyonunu simüle et.
-      Bu spesifik persona için en yüksek dönüşüm oranına sahip olacak **EN AZ 25 ADET** ürün seç ve listele.
-      
-      Çok Önemli: Her bir ürünü şu 3 kategoriden birine ata: "Üst Giyim", "Alt Giyim", "Aksesuar".
-      
-      Örneğin "Şehirli Profesyonel" için "Slim Fit İtalyan Kesim Blazer" (Üst Giyim) seçmelisin.
-      
-      Her ürün için:
-      - Ürün Adı
-      - Kategori (SADECE şunlardan biri: 'Üst Giyim', 'Alt Giyim', 'Aksesuar')
-      - Neden bu mağazaya ve personaya uygun olduğu (kısa ve net gerekçe)
-      - Tahmini fiyat (TRY cinsinden)
-      - Uyum Skoru (0-100)
-      
-      JSON formatında yanıtla. Listede en az 25 ürün olduğundan emin ol.
-    `;
-  
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    name: { type: Type.STRING },
-                    category: { type: Type.STRING, enum: ["Üst Giyim", "Alt Giyim", "Aksesuar"] },
-                    reason: { type: Type.STRING },
-                    estimatedPrice: { type: Type.STRING },
-                    matchScore: { type: Type.NUMBER }
-                },
-                required: ["name", "category", "reason", "estimatedPrice", "matchScore"]
-            }
-          }
-        }
-      });
-  
-      return JSON.parse(response.text || "[]");
-    } catch (error: any) {
-      console.error("Recommendation Error:", error);
-      return [];
-    }
-  };
+export const generateProductRecommendations = async (
+  persona: SegmentType,
+  brandUrl: string
+): Promise<RecommendedProduct[]> => {
+  return callApi('productRecommendations', { persona, brandUrl });
+};
 
 // 4. ANALYZE PRODUCT DNA
-export const analyzeProductDna = async (imageBase64: string, mimeType: string, price: number): Promise<ProductDNA> => {
-    const ai = getClient();
-    
-    // Explicitly listing the enum values for the model to choose from
-    const segmentsList = Object.values(SegmentType).filter(v => v !== SegmentType.UNKNOWN).join(", ");
-
-    const prompt = `
-      Sen bir Moda Perakende ve Ürün Analistisin.
-      
-      Elimizde bir ürün görseli ve fiyat bilgisi var.
-      Fiyat: ${price} TL
-      
-      Görevin bu ürünün DNA'sını çıkarmak ve aşağıdaki müşteri segmentlerinden hangisine en çok uyduğunu belirlemek:
-      Segmentler: ${segmentsList}
-      
-      Lütfen şunları analiz et:
-      1. En uygun Persona (Segment)
-      2. Uyum Skoru (0-100)
-      3. Analiz Gerekçesi (Neden bu segment?)
-      4. Stil Etiketleri (örn: #minimal, #vintage, #streetwear)
-      5. Algılanan Kalite (Düşük, Orta, Yüksek, Premium)
-      6. Baskın Renk Paleti (Renk isimleri)
-      
-      JSON formatında yanıtla.
-    `;
-  
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: {
-            parts: [
-                { inlineData: { mimeType: mimeType || 'image/jpeg', data: imageBase64 } },
-                { text: prompt }
-            ]
-        },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-                bestMatchPersona: { type: Type.STRING, enum: Object.values(SegmentType).filter(v => v !== SegmentType.UNKNOWN) },
-                matchScore: { type: Type.NUMBER },
-                analysisReasoning: { type: Type.STRING },
-                styleTags: { type: Type.ARRAY, items: { type: Type.STRING } },
-                perceivedQuality: { type: Type.STRING },
-                colorPalette: { type: Type.ARRAY, items: { type: Type.STRING } }
-            },
-            required: ["bestMatchPersona", "matchScore", "analysisReasoning", "styleTags", "perceivedQuality", "colorPalette"]
-        }
-        }
-      });
-  
-      const result = JSON.parse(response.text || "{}");
-      
-      // Map string to enum safely
-      let segment = SegmentType.UNKNOWN;
-      const segments = Object.values(SegmentType);
-      if (segments.includes(result.bestMatchPersona)) {
-        segment = result.bestMatchPersona as SegmentType;
-      }
-  
-      return {
-        bestMatchPersona: segment,
-        matchScore: result.matchScore,
-        analysisReasoning: result.analysisReasoning,
-        styleTags: result.styleTags,
-        perceivedQuality: result.perceivedQuality,
-        colorPalette: result.colorPalette
-      };
-    } catch (error: any) {
-      console.error("Product DNA Error:", error);
-      const msg = error.message || error.toString();
-      throw new Error(`Ürün analizi gerçekleştirilemedi: ${msg}`);
-    }
-  };
+export const analyzeProductDna = async (
+  imageBase64: string,
+  mimeType: string,
+  price: number
+): Promise<ProductDNA> => {
+  return callApi('analyzeDna', { imageBase64, mimeType, price });
+};
 
 // 5. GENERATE MOOD BOARD
-// Uses gemini-2.0-flash-preview-image-generation — the correct AI Studio image model.
-export const generateMoodBoard = async (prompt: string, aspectRatio: AspectRatio): Promise<string> => {
-    const ai = getClient();
-
-    try {
-        const response = await ai.models.generateContent({
-            model: "gemini-2.0-flash-preview-image-generation",
-            contents: [
-                {
-                    role: "user",
-                    parts: [
-                        { text: `Create a high-quality, professional retail store mood board image. Concept: ${prompt}. Style: editorial, fashion retail, modern design aesthetic.` }
-                    ]
-                }
-            ],
-            config: {
-                responseModalities: ["IMAGE", "TEXT"],
-            }
-        });
-
-        for (const part of response.candidates?.[0]?.content?.parts || []) {
-            if (part.inlineData) {
-                const base64 = part.inlineData.data;
-                const mimeType = part.inlineData.mimeType || 'image/png';
-                return `data:${mimeType};base64,${base64}`;
-            }
-        }
-
-        throw new Error("Görsel oluşturulamadı. Model görsel döndürmedi.");
-    } catch (error: any) {
-        console.error("Mood Board Generation Error:", error);
-        throw new Error(`Mood Board oluşturulamadı: ${error.message}`);
-    }
+export const generateMoodBoard = async (
+  prompt: string,
+  aspectRatio: AspectRatio
+): Promise<string> => {
+  // aspectRatio passed through for potential future server-side use
+  return callApi('generateMoodBoard', { prompt, aspectRatio });
 };
