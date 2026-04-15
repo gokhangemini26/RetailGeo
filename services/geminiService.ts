@@ -34,64 +34,43 @@ export const gatherLocationData = async (address: string, customCriteria?: strin
     ${criteriaText}
   `;
 
-  // STRATEGY 1: TRY GOOGLE MAPS GROUNDING
+  // STRATEGY 1: TRY GOOGLE SEARCH GROUNDING (AI Studio compatible)
   try {
-    console.log("Attempting Strategy 1: Google Maps Grounding...");
+    console.log("Attempting Strategy 1: Google Search Grounding...");
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: basePrompt,
       config: {
-        tools: [{ googleMaps: {} }],
+        tools: [{ googleSearch: {} }],
       },
     });
     return {
       text: response.text || "Veri bulunamadı.",
       chunks: response.candidates?.[0]?.groundingMetadata?.groundingChunks || [],
     };
-  } catch (mapError: any) {
-    console.warn("Strategy 1 (Maps) failed:", mapError);
+  } catch (searchError: any) {
+    console.warn("Strategy 1 (Search) failed, falling back to internal knowledge:", searchError);
 
-    // STRATEGY 2: TRY GOOGLE SEARCH GROUNDING
+    // STRATEGY 2: FALLBACK TO INTERNAL KNOWLEDGE (NO TOOLS)
     try {
-      console.log("Attempting Strategy 2: Google Search Grounding...");
+      console.log("Attempting Strategy 2: Internal Knowledge (No Tools)...");
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: basePrompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-        },
+        contents: basePrompt + "\n\n(Not: Arama araçlarına erişilemedi. Kendi genel coğrafi ve demografik bilginle bu bölgeyi, semti ve atmosferini analiz et.)",
       });
       return {
         text: response.text || "Veri bulunamadı.",
-        chunks: response.candidates?.[0]?.groundingMetadata?.groundingChunks || [],
+        chunks: [],
       };
-    } catch (searchError: any) {
-      console.warn("Strategy 2 (Search) failed:", searchError);
+    } catch (finalError: any) {
+      console.error("All strategies failed:", finalError);
+      const msg = finalError.message || finalError.toString();
 
-      // STRATEGY 3: FALLBACK TO INTERNAL KNOWLEDGE (NO TOOLS)
-      try {
-        console.log("Attempting Strategy 3: Internal Knowledge (No Tools)...");
-        const response = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: basePrompt + "\n\n(Not: Harita araçlarına erişilemedi, lütfen kendi genel coğrafi bilginle bu bölgeyi, semti ve atmosferini analiz et.)",
-          config: {
-            // Explicitly no tools to avoid CORS/Network errors
-          }
-        });
-        return {
-          text: response.text || "Veri bulunamadı.",
-          chunks: [],
-        };
-      } catch (finalError: any) {
-        console.error("All strategies failed:", finalError);
-        const msg = finalError.message || finalError.toString();
-        
-        let friendlyMsg = msg;
-        if (msg.includes("403")) friendlyMsg = "API Anahtarı yetkisi reddedildi (403). Domain kısıtlamalarını kontrol edin.";
-        if (msg.includes("Failed to fetch")) friendlyMsg = "İnternet bağlantısı veya Ağ hatası (CORS).";
-        
-        throw new Error(`Konum verileri toplanamadı. ${friendlyMsg}`);
-      }
+      let friendlyMsg = msg;
+      if (msg.includes("403")) friendlyMsg = "API Anahtarı yetkisi reddedildi (403). Vercel'de GEMINI_API_KEY değişkenini kontrol edin.";
+      if (msg.includes("Failed to fetch") || msg.includes("CORS")) friendlyMsg = "İnternet bağlantısı veya CORS hatası.";
+
+      throw new Error(`Konum verileri toplanamadı. ${friendlyMsg}`);
     }
   }
 };
@@ -199,16 +178,13 @@ export const analyzeStrategicFit = async (locationData: string, customScoring?: 
     }
   };
 
-  // PLAN A: Try Gemini 2.5 Pro (Thinking)
+  // PLAN A: Try Gemini 2.5 Pro (standard, no thinking - AI Studio compatible)
   try {
     console.log("Attempting Analysis with Gemini 2.5 Pro...");
     const response = await ai.models.generateContent({
       model: "gemini-2.5-pro",
       contents: prompt,
-      config: {
-        ...commonConfig,
-        thinkingConfig: { thinkingBudget: 1024 },
-      }
+      config: commonConfig,
     });
     return parseResult(response.text || "{}");
   } catch (proError: any) {
@@ -365,32 +341,23 @@ export const analyzeProductDna = async (imageBase64: string, mimeType: string, p
   };
 
 // 5. GENERATE MOOD BOARD
+// Uses gemini-2.0-flash-preview-image-generation — the correct AI Studio image model.
 export const generateMoodBoard = async (prompt: string, aspectRatio: AspectRatio): Promise<string> => {
     const ai = getClient();
-    
-    // Gemini 2.5 Flash Image supports: "1:1", "3:4", "4:3", "9:16", "16:9"
-    // We must fallback unsupported ratios from AspectRatio type.
-    let validRatio = aspectRatio;
-    const supportedRatios = ["1:1", "3:4", "4:3", "9:16", "16:9"];
-    
-    if (!supportedRatios.includes(aspectRatio)) {
-        if (aspectRatio === "2:3") validRatio = "3:4";
-        if (aspectRatio === "3:2") validRatio = "4:3";
-        if (aspectRatio === "21:9") validRatio = "16:9";
-    }
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash-image",
-            contents: {
-                parts: [
-                    { text: `Create a high-quality, professional retail store mood board. Concept: ${prompt}` }
-                ]
-            },
-            config: {
-                imageConfig: {
-                    aspectRatio: validRatio as any
+            model: "gemini-2.0-flash-preview-image-generation",
+            contents: [
+                {
+                    role: "user",
+                    parts: [
+                        { text: `Create a high-quality, professional retail store mood board image. Concept: ${prompt}. Style: editorial, fashion retail, modern design aesthetic.` }
+                    ]
                 }
+            ],
+            config: {
+                responseModalities: ["IMAGE", "TEXT"],
             }
         });
 
@@ -401,8 +368,8 @@ export const generateMoodBoard = async (prompt: string, aspectRatio: AspectRatio
                 return `data:${mimeType};base64,${base64}`;
             }
         }
-        
-        throw new Error("Görsel oluşturulamadı.");
+
+        throw new Error("Görsel oluşturulamadı. Model görsel döndürmedi.");
     } catch (error: any) {
         console.error("Mood Board Generation Error:", error);
         throw new Error(`Mood Board oluşturulamadı: ${error.message}`);
