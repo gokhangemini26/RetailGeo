@@ -199,20 +199,20 @@ export const analyzeStrategicFit = async (locationData: string, customScoring?: 
     }
   };
 
-  // PLAN A: Try Gemini 3 Pro (Thinking)
+  // PLAN A: Try Gemini 2.5 Pro (Thinking)
   try {
-    console.log("Attempting Analysis with Gemini 3 Pro...");
+    console.log("Attempting Analysis with Gemini 2.5 Pro...");
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-2.5-pro",
       contents: prompt,
       config: {
         ...commonConfig,
-        thinkingConfig: { thinkingBudget: 1024 }, // Lower budget to be safer/faster
+        thinkingConfig: { thinkingBudget: 1024 },
       }
     });
     return parseResult(response.text || "{}");
   } catch (proError: any) {
-    console.warn("Gemini 3 Pro failed, falling back to Flash:", proError);
+    console.warn("Gemini 2.5 Pro failed, falling back to Flash:", proError);
     
     // PLAN B: Fallback to Gemini 2.5 Flash
     try {
