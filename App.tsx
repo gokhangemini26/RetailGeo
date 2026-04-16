@@ -20,28 +20,40 @@ function App() {
             </h1>
           </div>
           
-          <nav className="flex items-center gap-1 bg-slate-800/50 p-1 rounded-lg border border-slate-700/50">
-            <button
-              onClick={() => setActiveTab('analysis')}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
-                activeTab === 'analysis' 
-                  ? 'bg-slate-700 text-white shadow-sm' 
-                  : 'text-slate-400 hover:text-white'
-              }`}
+          <div className="flex items-center gap-4">
+            <a 
+              href="/RetailGeo_Kullanici_El_Kitabi.md" 
+              download 
+              className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5"
             >
-              Konum Analizi
-            </button>
-            <button
-              onClick={() => setActiveTab('products')}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
-                activeTab === 'products' 
-                  ? 'bg-slate-700 text-white shadow-sm' 
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Ürün Analizi
-            </button>
-          </nav>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Kullanım Kılavuzu
+            </a>
+            <nav className="flex items-center gap-1 bg-slate-800/50 p-1 rounded-lg border border-slate-700/50">
+              <button
+                onClick={() => setActiveTab('analysis')}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  activeTab === 'analysis' 
+                    ? 'bg-slate-700 text-white shadow-sm' 
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Konum Analizi
+              </button>
+              <button
+                onClick={() => setActiveTab('products')}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  activeTab === 'products' 
+                    ? 'bg-slate-700 text-white shadow-sm' 
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Ürün Analizi
+              </button>
+            </nav>
+          </div>
         </div>
       </header>
 
