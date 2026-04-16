@@ -45,7 +45,7 @@ async function handleGatherLocation(ai: GoogleGenAI, body: any) {
   // Strategy 1: Google Search Grounding
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       contents: basePrompt,
       config: { tools: [{ googleSearch: {} }] },
     });
@@ -58,7 +58,7 @@ async function handleGatherLocation(ai: GoogleGenAI, body: any) {
 
     // Strategy 2: Internal knowledge fallback
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       contents: basePrompt + '\n\n(Not: Arama araçlarına erişilemedi. Kendi genel coğrafi ve demografik bilginle bu bölgeyi, semti ve atmosferini analiz et.)',
     });
     return {
@@ -136,18 +136,18 @@ async function handleAnalyzeFit(ai: GoogleGenAI, body: any) {
     return { ...result, dominantSegment: segment };
   };
 
-  // Plan A: gemini-2.5-pro
+  // Plan A: gemini-2.0-flash
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-pro',
+      model: 'gemini-2.0-flash',
       contents: prompt,
       config: commonConfig,
     });
     return parseResult(response.text || '{}');
   } catch {
-    // Plan B: gemini-2.5-flash fallback
+    // Plan B: gemini-2.0-flash fallback
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       contents: prompt,
       config: commonConfig,
     });
@@ -170,7 +170,7 @@ async function handleProductRecommendations(ai: GoogleGenAI, body: any) {
   `;
 
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.0-flash',
     contents: prompt,
     config: {
       responseMimeType: 'application/json',
@@ -206,7 +206,7 @@ async function handleAnalyzeDna(ai: GoogleGenAI, body: any) {
   `;
 
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.0-flash',
     contents: {
       parts: [
         { inlineData: { mimeType: mimeType || 'image/jpeg', data: imageBase64 } },
