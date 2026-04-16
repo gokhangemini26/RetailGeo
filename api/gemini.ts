@@ -93,6 +93,7 @@ async function handleAnalyzeFit(ai: GoogleGenAI, body: any) {
 
   const prompt = `
     Sen "RetailGeo Hibrit Ölçüm Metodu"nu kullanan Kıdemli bir Stratejistisin.
+    ÖNEMLİ: Bu analiz, "www.sarar.com" ve benzeri premium/klasik HAZIR GİYİM, TEKSTİL ve MODA markaları için yapılmaktadır. Kesinlikle bir süpermarket veya gıda işletmesi için DEĞİLDİR.
     Aşağıdaki konum verilerini analiz et:
     ---
     ${locationData}
@@ -101,7 +102,7 @@ async function handleAnalyzeFit(ai: GoogleGenAI, body: any) {
     *Eğer puanlar birbirine çok yakınsa, metin içerisindeki "atmosfere" göre inisiyatif al ve birini seç.*
     ÇIKTI: JSON formatında yanıtla.
     dominantSegment alanı SADECE şunlardan biri olmalıdır: "Şehirli Profesyonel", "Genç & Trend", "Aile & Konut".
-    Ürün Stratejisi (productStrategy): Belirlenen segmente göre Markdown formatında detaylı bir öneri yaz.
+    Ürün Stratejisi (productStrategy): Belirlenen segmente göre, mağazanın BİR GİYİM/MODA MAĞAZASI olduğunu merkezde tutarak (kesinlikle gıda, market, manav ürünü ÖNERME), vitrin düzenleşimi, öne çıkarılacak koleksiyon oranları (örneğin %60 Business, %40 Smart Casual) ve moda stratejisi üzerine Markdown formatında detaylı bir öneri yaz.
   `;
 
   const commonConfig = {
