@@ -112,8 +112,12 @@ export const ProductAnalyzer: React.FC = () => {
   };
 
   const handleAnalyze = async () => {
-    if ((!imageUrl && !previewBase64) || !price) {
-        alert("Lütfen bir görsel yükleyin veya URL girin, ve fiyatı belirtin.");
+    if (!imageUrl.trim() && !previewBase64) {
+        alert("Lütfen ürünün fotoğrafını bilgisayarınızdan yükleyin VEYA görselin İnternet bağlantısını (Resim Linkini) alttaki kutuya yapıştırın.");
+        return;
+    }
+    if (!price || Number(price) <= 0 || isNaN(Number(price))) {
+        alert("Lütfen geçerli bir ürün fiyatı girin. Harf, nokta veya 'TL' gibi semboller kullanmadan sadece rakam giriniz (Örn: 2500).");
         return;
     }
     setLoading(true);
